@@ -1,0 +1,26 @@
+{
+  "name": "ipo-market-dashboard",
+  "version": "1.0.0",
+  "description": "新股市场情况看板 - 智能数据分析和可视化平台",
+  "main": "index.html",
+  "scripts": {
+    "start": "python server.py",
+    "build": "echo 'Static site, no build needed'"
+  },
+  "keywords": [
+    "IPO",
+    "stock-market",
+    "data-visualization",
+    "financial-analysis",
+    "dashboard"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "homepage": ".",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ipo-dashboard.git"
+  }
+}
+
+
