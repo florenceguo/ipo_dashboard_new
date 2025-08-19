@@ -13,11 +13,12 @@ async function loadLatestExcelData() {
         updateLoadingProgress('正在检测最新数据文件...');
         
         // 尝试加载不同可能的Excel文件名
-        const possibleFiles = [
-            'excel_data_summary.json', // 如果有JSON文件
-            'newest_data.json'         // 或者其他可能的文件名
-        ];
-        
+   // 尝试加载不同可能的Excel文件名
+   const possibleFiles = [
+       'excel_data_optimized.json', // 优先加载优化后的文件
+       'excel_data_summary.json',   // 备用文件
+       'newest_data.json'           // 其他可能的文件名
+   ];
         let dataLoaded = false;
         
         for (const filename of possibleFiles) {
