@@ -13,12 +13,12 @@ async function loadLatestExcelData() {
         updateLoadingProgress('正在检测最新数据文件...');
         
         // 尝试加载不同可能的Excel文件名
-   // 尝试加载不同可能的Excel文件名
-   const possibleFiles = [
-       'excel_data_optimized.json', // 优先加载优化后的文件
-       'excel_data_summary.json',   // 备用文件
-       'newest_data.json'           // 其他可能的文件名
-   ];
+        const possibleFiles = [
+            'excel_data_optimized.json', // 优先加载优化后的文件
+            'excel_data_summary.json',   // 备用文件
+            'newest_data.json'           // 其他可能的文件名
+        ];
+        
         let dataLoaded = false;
         
         for (const filename of possibleFiles) {
@@ -99,6 +99,8 @@ async function refreshData() {
 
 // 初始化仪表板
 function initializeDashboard() {
+    console.log('🚀 initializeDashboard 被调用');
+    
     // 更新数据时间
     updateDataTime();
     
@@ -108,8 +110,11 @@ function initializeDashboard() {
     
     // 初始化图表
     setTimeout(() => {
+        console.log('⏰ 延时执行开始...');
         initializeCharts();
+        console.log('📈 图表初始化完成，开始更新统计...');
         updateStatistics();
+        console.log('🎯 仪表板初始化完全完成');
     }, 100);
 }
 
@@ -148,10 +153,13 @@ function initializeCharts() {
     try {
         createWeeklyReturnsChart();
         createBeijingExchangeChart();
-        createLotteryRateChart();
+        createMainBoardLotteryChart();
+        createBeijingExchangeLotteryChart();
         createIssuanceChart();
         createSectorPerformanceChart();
         createPeRatioChart();
+        createIpoHeatmapChart();
+        updateComprehensiveStats();
     } catch (error) {
         console.error('图表初始化失败:', error);
         showError('图表初始化失败: ' + error.message);
@@ -167,22 +175,39 @@ function createWeeklyReturnsChart() {
     const returns = data.map(item => (item['年化收益贡献'] * 100).toFixed(2));
     
     charts.weeklyReturns = new Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: labels,
             datasets: [{
                 label: '年化收益贡献 (%)',
                 data: returns,
+                backgroundColor: 'rgba(52, 152, 219, 0.8)',
                 borderColor: '#3498db',
-                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                fill: true,
-                tension: 0.4
+                borderWidth: 1
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: { 
+                legend: { display: false },
+                datalabels: {
+                    display: function(context) {
+                        // 只显示最后3个数据点的标签
+                        return context.dataIndex >= context.dataset.data.length - 3;
+                    },
+                    anchor: 'end',
+                    align: 'top',
+                    formatter: function(value) {
+                        return value + '%';
+                    },
+                    color: '#2c3e50',
+                    font: {
+                        weight: 'bold',
+                        size: 12
+                    }
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -193,7 +218,8 @@ function createWeeklyReturnsChart() {
                     }
                 }
             }
-        }
+        },
+        plugins: [ChartDataLabels] // 启用数据标签插件
     });
 }
 
@@ -223,7 +249,25 @@ function createBeijingExchangeChart() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: { 
+                legend: { display: false },
+                datalabels: {
+                    display: function(context) {
+                        // 只显示最后3个数据点的标签
+                        return context.dataIndex >= context.dataset.data.length - 3;
+                    },
+                    anchor: 'end',
+                    align: 'top',
+                    formatter: function(value) {
+                        return value + '%';
+                    },
+                    color: '#2c3e50',
+                    font: {
+                        weight: 'bold',
+                        size: 12
+                    }
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -234,53 +278,191 @@ function createBeijingExchangeChart() {
                     }
                 }
             }
-        }
+        },
+        plugins: [ChartDataLabels] // 启用数据标签插件
     });
 }
 
 // 其他图表创建函数...
-function createLotteryRateChart() {
-    const ctx = document.getElementById('lotteryRateChart').getContext('2d');
+// 主板中签率图表
+function createMainBoardLotteryChart() {
+    const ctx = document.getElementById('mainBoardLotteryChart').getContext('2d');
     const data = excelData['中签率统计']?.data || [];
     
+    // 使用所有中签率统计数据（主要是主板数据）
     const labels = data.map(item => item.week_label);
-    const lotteryA = data.map(item => (item.lottery_a * 10000).toFixed(3));
-    const lotteryB = data.map(item => (item.lottery_b * 10000).toFixed(3));
+    const lotteryA = data.map(item => (parseFloat(item.lottery_a) * 100 || 0));
+    const lotteryB = data.map(item => (parseFloat(item.lottery_b) * 100 || 0));
     
-    charts.lotteryRate = new Chart(ctx, {
+    // 计算平均值
+    const avgA = lotteryA.length > 0 ? lotteryA.reduce((a, b) => a + b, 0) / lotteryA.length : 0;
+    const avgB = lotteryB.length > 0 ? lotteryB.reduce((a, b) => a + b, 0) / lotteryB.length : 0;
+    
+    // 计算A/B中签率比的均值
+    const validA2BRatios = data.filter(item => item.lottery_a2b && !isNaN(parseFloat(item.lottery_a2b)));
+    const avgA2B = validA2BRatios.length > 0 
+        ? validA2BRatios.reduce((sum, item) => sum + parseFloat(item.lottery_a2b), 0) / validA2BRatios.length 
+        : 0;
+    
+    document.getElementById('mainBoardAvgLotteryA').textContent = avgA.toFixed(4) + '%';
+    document.getElementById('mainBoardAvgLotteryB').textContent = avgB.toFixed(4) + '%';
+    document.getElementById('mainBoardAvgA2BRatio').textContent = avgA2B.toFixed(3);
+    
+    charts.mainBoardLottery = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
             datasets: [
                 {
-                    label: 'A类中签率 (‰)',
+                    label: '主板A类中签率 (%)',
                     data: lotteryA,
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                },
+                {
+                    label: '主板B类中签率 (%)',
+                    data: lotteryB,
                     borderColor: '#e74c3c',
                     backgroundColor: 'rgba(231, 76, 60, 0.1)',
                     fill: false,
-                    tension: 0.4
-                },
-                {
-                    label: 'B类中签率 (‰)',
-                    data: lotteryB,
-                    borderColor: '#27ae60',
-                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
-                    fill: false,
-                    tension: 0.4
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { position: 'top' } },
+            plugins: { 
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toFixed(4) + '%';
+                        }
+                    }
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return value + '‰';
+                            return value.toFixed(4) + '%';
                         }
+                    },
+                    title: {
+                        display: true,
+                        text: '中签率 (%)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '时间'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 北交所中签率图表
+function createBeijingExchangeLotteryChart() {
+    const ctx = document.getElementById('beijingExchangeLotteryChart').getContext('2d');
+    const rawData = excelData['原始数据']?.data || [];
+    
+    // 筛选北交所数据 - 只筛选ipo_board='北交所'
+    const beijingData = rawData.filter(item => item.ipo_board === '北交所');
+    
+    console.log('=== 北交所数据调试 ===');
+    console.log('原始数据总数:', rawData.length);
+    console.log('北交所数据总数:', beijingData.length);
+    
+    // 按时间排序（从早到晚）
+    beijingData.sort((a, b) => new Date(a.listing_date) - new Date(b.listing_date));
+    
+    console.log('=== 所有北交所数据的lottery_online字段 ===');
+    beijingData.forEach((item, index) => {
+        console.log(`${index + 1}. ${item.sec_name} (${item.listing_date}): lottery_online = ${item.lottery_online}`);
+    });
+    
+    // 创建标签和数据
+    const labels = beijingData.map(item => {
+        const date = new Date(item.listing_date);
+        return `${item.sec_name}\n${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    });
+    
+    const lotteryOnline = beijingData.map(item => {
+        const value = parseFloat(item.lottery_online) * 100 || 0;
+        console.log(`${item.sec_name}: ${item.lottery_online} -> ${value}%`);
+        return value;
+    });
+    
+    console.log('图表标签数量:', labels.length);
+    console.log('图表数据数量:', lotteryOnline.length);
+    console.log('时间范围:', labels[0], '到', labels[labels.length - 1]);
+    
+    // 计算平均值
+    const avgOnline = lotteryOnline.length > 0 
+        ? lotteryOnline.reduce((a, b) => a + b, 0) / lotteryOnline.length 
+        : 0;
+    
+    document.getElementById('beijingAvgLotteryOnline').textContent = avgOnline.toFixed(4) + '%';
+    document.getElementById('beijingLotteryCount').textContent = beijingData.length;
+    
+    charts.beijingExchangeLottery = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '北交所网上中签率 (%)',
+                    data: lotteryOnline,
+                    borderColor: '#9b59b6',
+                    backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toFixed(4) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(4) + '%';
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: '中签率 (%)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '时间'
                     }
                 }
             }
@@ -544,6 +726,9 @@ function createPeRatioChart() {
 
 // 更新统计数据
 function updateStatistics() {
+    console.log('🔄 updateStatistics 函数被调用');
+    console.log('excelData keys:', Object.keys(excelData || {}));
+    
     try {
         // 周度收益统计
         const weeklyData = excelData['周度收益']?.data || [];
@@ -568,46 +753,57 @@ function updateStatistics() {
         }
         
         // 其他统计...
+        console.log('📊 开始调用子统计函数...');
         updateLotteryStats();
         updateIssuanceStats();
         updateSectorStats();
         updatePeStats();
+        console.log('✅ 所有统计函数调用完成');
         
     } catch (error) {
-        console.error('统计数据更新失败:', error);
+        console.error('❌ 统计数据更新失败:', error);
     }
 }
 
 function updateLotteryStats() {
-    const lotteryData = excelData['中签率统计']?.data || [];
-    if (lotteryData.length > 0) {
-        const lotteryA = lotteryData.map(item => item.lottery_a);
-        const lotteryB = lotteryData.map(item => item.lottery_b);
-        const avgLotteryA = (lotteryA.reduce((a, b) => a + b, 0) / lotteryA.length * 10000).toFixed(3);
-        const avgLotteryB = (lotteryB.reduce((a, b) => a + b, 0) / lotteryB.length * 10000).toFixed(3);
-        
-        document.getElementById('avgLotteryA').textContent = avgLotteryA + '‰';
-        document.getElementById('avgLotteryB').textContent = avgLotteryB + '‰';
-    }
+    // 这个函数现在不需要了，因为中签率统计已经在各自的图表创建函数中处理
+    // 主板中签率在 createMainBoardLotteryChart 中处理
+    // 北交所中签率在 createBeijingExchangeLotteryChart 中处理
+    console.log('📊 updateLotteryStats: 中签率统计已在图表创建函数中处理');
 }
 
 function updateIssuanceStats() {
     const issuanceData = excelData['发行统计']?.data || [];
+    console.log('发行统计数据:', issuanceData.length, '条记录');
+    
     if (issuanceData.length > 0) {
         const totalStocks = issuanceData.reduce((a, b) => a + (b.stock_count || 0), 0);
         const totalRaised = issuanceData.reduce((a, b) => a + (b.total_raised_fund || 0), 0);
         
-        document.getElementById('totalStocks').textContent = totalStocks;
-        document.getElementById('totalRaised').textContent = totalRaised.toFixed(1) + '亿';
+        console.log('总发行数量:', totalStocks);
+        console.log('总募资金额:', totalRaised.toFixed(1), '亿');
+        
+        const stocksElement = document.getElementById('totalStocks');
+        const raisedElement = document.getElementById('totalRaised');
+        
+        console.log('stocksElement:', stocksElement);
+        console.log('raisedElement:', raisedElement);
+        
+        if (stocksElement) stocksElement.textContent = totalStocks;
+        if (raisedElement) raisedElement.textContent = totalRaised.toFixed(1) + '亿';
+    } else {
+        console.log('❌ 发行统计数据为空');
     }
 }
 
 function updateSectorStats() {
     const sectorData = excelData['板块涨跌幅']?.data || [];
+    console.log('板块涨跌幅数据:', sectorData.length, '条记录');
+    
     if (sectorData.length > 0) {
         const sectors = ['上证主板', '深证主板', '科创板', '创业板', '北交所'];
         let bestSector = '';
-        let bestReturn = 0;
+        let bestReturn = -Infinity; // 初始化为负无穷，以处理负收益情况
         
         sectors.forEach(sector => {
             const validReturns = sectorData
@@ -616,6 +812,7 @@ function updateSectorStats() {
             
             if (validReturns.length > 0) {
                 const avgReturn = validReturns.reduce((a, b) => a + b, 0) / validReturns.length;
+                console.log(`${sector}: 平均涨幅 ${avgReturn.toFixed(2)}%`);
                 if (avgReturn > bestReturn) {
                     bestReturn = avgReturn;
                     bestSector = sector;
@@ -623,8 +820,20 @@ function updateSectorStats() {
             }
         });
         
-        document.getElementById('bestSector').textContent = bestSector;
-        document.getElementById('bestSectorReturn').textContent = (bestReturn * 100).toFixed(2) + '%';
+        console.log('最佳板块:', bestSector, '涨幅:', bestReturn.toFixed(2) + '%');
+        
+        const sectorElement = document.getElementById('bestSector');
+        const returnElement = document.getElementById('bestSectorReturn');
+        
+        console.log('sectorElement:', sectorElement);
+        console.log('returnElement:', returnElement);
+        
+        if (bestSector && sectorElement && returnElement) {
+            sectorElement.textContent = bestSector;
+            returnElement.textContent = (bestReturn * 100).toFixed(2) + '%';
+        }
+    } else {
+        console.log('❌ 板块涨跌幅数据为空');
     }
 }
 
@@ -840,3 +1049,179 @@ document.addEventListener('click', function(event) {
         dropdown.classList.remove('show');
     }
 });
+
+// IPO发行热力日历图表（分板块展示）
+function createIpoHeatmapChart() {
+    const ctx = document.getElementById('ipoHeatmapChart').getContext('2d');
+    const rawData = excelData['原始数据']?.data || [];
+    
+    if (rawData.length === 0) return;
+    
+    // 定义板块和颜色
+    const boards = ['上证主板', '深证主板', '科创板', '创业板', '北交所'];
+    const boardColors = {
+        '上证主板': 'rgba(255, 99, 132, 0.8)',
+        '深证主板': 'rgba(54, 162, 235, 0.8)', 
+        '科创板': 'rgba(255, 206, 86, 0.8)',
+        '创业板': 'rgba(75, 192, 192, 0.8)',
+        '北交所': 'rgba(153, 102, 255, 0.8)'
+    };
+    
+    // 按月和板块统计IPO数量
+    const monthlyBoardStats = {};
+    let totalPeakCount = 0;
+    let peakMonth = '';
+    
+    rawData.forEach(item => {
+        if (!item.listing_date || !item.ipo_board) return;
+        
+        const date = new Date(item.listing_date);
+        const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        const board = item.ipo_board;
+        
+        if (!monthlyBoardStats[monthKey]) {
+            monthlyBoardStats[monthKey] = {};
+            boards.forEach(b => monthlyBoardStats[monthKey][b] = 0);
+        }
+        
+        if (boards.includes(board)) {
+            monthlyBoardStats[monthKey][board]++;
+        }
+    });
+    
+    // 计算每月总数和峰值
+    const months = Object.keys(monthlyBoardStats).sort();
+    months.forEach(month => {
+        const monthTotal = Object.values(monthlyBoardStats[month]).reduce((sum, count) => sum + count, 0);
+        if (monthTotal > totalPeakCount) {
+            totalPeakCount = monthTotal;
+            peakMonth = month;
+        }
+    });
+    
+    // 更新统计信息
+    document.getElementById('peakMonth').textContent = peakMonth || '-';
+    document.getElementById('peakCount').textContent = totalPeakCount || '-';
+    
+    // 准备图表数据集
+    const datasets = boards.map(board => ({
+        label: board,
+        data: months.map(month => monthlyBoardStats[month][board] || 0),
+        backgroundColor: boardColors[board],
+        borderColor: boardColors[board].replace('0.8', '1'),
+        borderWidth: 1
+    }));
+    
+    charts.ipoHeatmap = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: months,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { 
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        title: function(context) {
+                            return context[0].label + '月IPO发行情况';
+                        },
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y}只`;
+                        },
+                        footer: function(tooltipItems) {
+                            const total = tooltipItems.reduce((sum, item) => sum + item.parsed.y, 0);
+                            return `总计: ${total}只`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    title: {
+                        display: true,
+                        text: '月份'
+                    }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    ticks: { stepSize: 1 },
+                    title: {
+                        display: true,
+                        text: '发行数量'
+                    }
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false
+            }
+        }
+    });
+}
+
+// 更新综合统计数据
+function updateComprehensiveStats() {
+    const rawData = excelData['原始数据']?.data || [];
+    const lotteryData = excelData['中签率统计']?.data || [];
+    
+    if (rawData.length === 0) return;
+    
+    // 计算总IPO数量
+    const totalCount = rawData.length;
+    document.getElementById('totalIpoCount').textContent = totalCount;
+    
+    // 计算总募资金额
+    const totalRaised = rawData.reduce((sum, item) => {
+        const amount = parseFloat(item.actual_raised_fund) || 0;
+        return sum + amount;
+    }, 0);
+    document.getElementById('totalRaisedAmount').textContent = totalRaised.toFixed(1);
+    
+    // 计算平均首日涨幅
+    const validReturns = rawData.filter(item => 
+        item.pctchg !== null && item.pctchg !== undefined && !isNaN(item.pctchg)
+    );
+    const avgReturn = validReturns.length > 0 
+        ? validReturns.reduce((sum, item) => sum + parseFloat(item.pctchg), 0) / validReturns.length
+        : 0;
+    document.getElementById('avgFirstDayReturn').textContent = avgReturn.toFixed(2) + '%';
+    
+    // 计算平均中签率
+    if (lotteryData.length > 0) {
+        const avgLottery = lotteryData.reduce((sum, item) => {
+            const rateA = parseFloat(item.lottery_a) * 100 || 0;
+            const rateB = parseFloat(item.lottery_b) * 100 || 0;
+            return sum + (rateA + rateB) / 2;
+        }, 0) / lotteryData.length;
+        document.getElementById('avgLotteryRate').textContent = avgLottery.toFixed(4) + '%';
+    }
+    
+    // 计算上涨成功率
+    const positiveReturns = validReturns.filter(item => parseFloat(item.pctchg) > 0);
+    const successRate = validReturns.length > 0 
+        ? (positiveReturns.length / validReturns.length * 100)
+        : 0;
+    document.getElementById('successRate').textContent = successRate.toFixed(1) + '%';
+    
+    // 计算平均市盈率
+    const validPE = rawData.filter(item => 
+        item.ipo_pe && !isNaN(parseFloat(item.ipo_pe)) && parseFloat(item.ipo_pe) > 0
+    );
+    const avgPE = validPE.length > 0 
+        ? validPE.reduce((sum, item) => sum + parseFloat(item.ipo_pe), 0) / validPE.length
+        : 0;
+    document.getElementById('avgPE').textContent = avgPE.toFixed(1);
+}
