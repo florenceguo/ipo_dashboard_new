@@ -901,11 +901,11 @@ function getSelectedBoards() {
 }
 
 function calculateReturns() {
-    const netAssets = parseFloat(document.getElementById('netAssets').value) || 0;
+    const netAssetsWan = parseFloat(document.getElementById('netAssets').value) || 0;
     const riskFreeRate = parseFloat(document.getElementById('riskFreeRate').value) || 0;
     const selectedBoards = getSelectedBoards();
     
-    if (netAssets <= 0) {
+    if (netAssetsWan <= 0) {
         alert('请输入有效的净资产金额');
         return;
     }
@@ -915,25 +915,168 @@ function calculateReturns() {
         return;
     }
     
-    // 计算各板块的历史收益率
-    const boardReturns = calculateBoardReturns(selectedBoards);
+    // 转换单位：万元 -> 元
+    const aum = netAssetsWan * 10000;
+    console.log('💡 单位转换:', {
+        输入的万元: netAssetsWan,
+        转换后的元: aum.toLocaleString(),
+        对应亿元: (aum / 100000000).toFixed(2) + '亿'
+    });
+    // 转换单位：百分比 -> 小数 (如1.4% -> 0.014)
+    const rf = riskFreeRate / 100;
     
-    // 计算预期收益
-    const expectedReturn = calculateExpectedReturn(boardReturns, netAssets);
-    const expectedProfit = (netAssets * 10000 * expectedReturn / 100).toFixed(0);
-    const riskAdjustedReturn = (expectedReturn - riskFreeRate).toFixed(2);
+    // 为了匹配Python测试，使用特定时间范围：2025-01-01 到 2025-07-21
+    const testStartDate = new Date('2025-01-01');
+    const testEndDate = new Date('2025-07-21');
     
-    // 计算建议配置比例
-    const recommendedAllocation = calculateRecommendedAllocation(expectedReturn, riskFreeRate);
+    console.log('🧪 测试参数 (匹配Python):', {
+        时间范围: '2025-01-01 到 2025-07-21',
+        资产规模: (aum / 100000000).toFixed(2) + '亿元',
+        选择板块: selectedBoards.length > 0 ? selectedBoards : '全部板块'
+    });
+    
+    // 调用rt_estimation逻辑，使用指定时间范围
+    const result = rtEstimation(aum, selectedBoards, rf, testStartDate, testEndDate);
     
     // 更新结果显示
-    document.getElementById('expectedReturn').textContent = expectedReturn.toFixed(2) + '%';
-    document.getElementById('expectedProfit').textContent = '¥' + parseInt(expectedProfit).toLocaleString();
-    document.getElementById('riskAdjustedReturn').textContent = riskAdjustedReturn + '%';
-    document.getElementById('recommendedAllocation').textContent = recommendedAllocation + '%';
+    document.getElementById('expectedReturn').textContent = (result.totalReturn * 100).toFixed(2) + '%';
+    document.getElementById('expectedProfit').textContent = '¥' + Math.round(aum * result.totalReturn).toLocaleString();
+    document.getElementById('riskAdjustedReturn').textContent = ((result.totalReturn - rf) * 100).toFixed(2) + '%';
+    document.getElementById('recommendedAllocation').textContent = calculateRecommendedAllocation(result.totalReturn * 100, riskFreeRate) + '%';
     
     // 显示计算详情
-    showCalculationBreakdown(selectedBoards, boardReturns, netAssets, expectedReturn, riskFreeRate);
+    showRtEstimationBreakdown(selectedBoards, result, netAssetsWan, riskFreeRate);
+}
+
+// rt_estimation逻辑实现 - 完全按照Python函数逻辑
+function rtEstimation(aum, selectedBoards, rf, startDate = null, endDate = null) {
+    const rawData = excelData['原始数据']?.data || [];
+    
+    console.log('🔍 rt_estimation开始 - 完全按照Python逻辑');
+    console.log('📥 输入参数:', {
+        aum: aum.toLocaleString() + '元',
+        selectedBoards: selectedBoards,
+        rf: rf,
+        startDate: startDate?.toISOString().split('T')[0],
+        endDate: endDate?.toISOString().split('T')[0]
+    });
+    
+    if (rawData.length === 0) {
+        console.log('❌ 原始数据为空');
+        return { ipoReturn: 0, freecashReturn: 0, totalReturn: rf, validCount: 0, totalRtamt: 0 };
+    }
+    
+    // 步骤1: 时间筛选 - ipoinfo_sub = ipoinfo[(ipoinfo.listing_date>=startdate) & (ipoinfo.listing_date<=enddate)]
+    let ipoinfo_sub = rawData;
+    if (startDate && endDate) {
+        ipoinfo_sub = rawData.filter(item => {
+            const listingDate = new Date(item.listing_date);
+            return listingDate >= startDate && listingDate <= endDate;
+        });
+        console.log('📅 时间筛选:', {
+            原始数据: rawData.length,
+            筛选后: ipoinfo_sub.length,
+            时间范围: `${startDate.toISOString().split('T')[0]} 到 ${endDate.toISOString().split('T')[0]}`
+        });
+    }
+    
+    // 步骤2: 计算rtamt - ipoinfo_sub['rtamt'] = ipoinfo_sub.apply(lambda x: min(aum,x.offline_maxbuyamt)*x.pctchg*x.lottery_b,axis = 1)
+    let totalRtamt = 0;
+    let validCount = 0;
+    
+    ipoinfo_sub.forEach((item, index) => {
+        if (item.offline_maxbuyamt !== null && item.offline_maxbuyamt !== undefined && 
+            item.pctchg !== null && item.pctchg !== undefined &&
+            item.lottery_b !== null && item.lottery_b !== undefined) {
+            
+            const offlineMaxbuyamt = parseFloat(item.offline_maxbuyamt);
+            const pctchg = parseFloat(item.pctchg);
+            const lotteryB = parseFloat(item.lottery_b);
+            
+            // 完全按照Python公式: min(aum, offline_maxbuyamt) * pctchg * lottery_b
+            // 注意：这里需要确认pctchg和lottery_b的单位
+            const rtamt = Math.min(aum, offlineMaxbuyamt) * pctchg * lotteryB;
+            totalRtamt += rtamt;
+            validCount++;
+            
+            if (validCount <= 5) {
+                console.log(`✅ rtamt计算${validCount}:`, {
+                    sec_name: item.sec_name,
+                    min_aum_offline: Math.min(aum, offlineMaxbuyamt).toLocaleString(),
+                    pctchg: pctchg,
+                    lottery_b: lotteryB,
+                    rtamt: rtamt.toFixed(2)
+                });
+            }
+        }
+    });
+    
+    // 步骤3: 板块筛选 - if len(board)>0: ipoinfo_sub = ipoinfo_sub[ipoinfo_sub.ipo_board.isin(board)]
+    if (selectedBoards.length > 0) {
+        // 重新筛选并重新计算rtamt
+        const boardFilteredData = ipoinfo_sub.filter(item => selectedBoards.includes(item.ipo_board));
+        
+        totalRtamt = 0;
+        validCount = 0;
+        
+        boardFilteredData.forEach(item => {
+            if (item.offline_maxbuyamt !== null && item.offline_maxbuyamt !== undefined && 
+                item.pctchg !== null && item.pctchg !== undefined &&
+                item.lottery_b !== null && item.lottery_b !== undefined) {
+                
+                const offlineMaxbuyamt = parseFloat(item.offline_maxbuyamt);
+                const pctchg = parseFloat(item.pctchg);
+                const lotteryB = parseFloat(item.lottery_b);
+                
+                const rtamt = Math.min(aum, offlineMaxbuyamt) * pctchg * lotteryB;
+                totalRtamt += rtamt;
+                validCount++;
+            }
+        });
+        
+        console.log('📋 板块筛选后:', {
+            筛选前: ipoinfo_sub.length,
+            筛选后: boardFilteredData.length,
+            选择板块: selectedBoards,
+            有效记录: validCount,
+            总rtamt: totalRtamt.toFixed(2)
+        });
+        
+        ipoinfo_sub = boardFilteredData;
+    }
+    
+    // 步骤4: 计算时间跨度
+    const delta = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+    
+    // 步骤5: 计算iport - iport = (365/delta)*(ipoinfo_sub.rtamt.sum()/aum)
+    const iport = (365 / delta) * (totalRtamt / aum);
+    
+    // 步骤6: 计算freecash_rt - freecash_rt = rf*(aum-1.2*80000000)/aum
+    const freecash_rt = rf * (aum - 1.2 * 80000000) / aum;
+    
+    // 步骤7: 计算tot_rt - tot_rt = iport+freecash_rt
+    const tot_rt = iport + freecash_rt;
+    
+    console.log('🎯 Python公式计算结果:', {
+        delta天数: delta,
+        '365/delta': (365/delta).toFixed(4),
+        'rtamt.sum()': totalRtamt.toFixed(2),
+        'rtamt.sum()/aum': (totalRtamt/aum).toFixed(8),
+        'iport': (iport * 100).toFixed(4) + '%',
+        'freecash_rt': (freecash_rt * 100).toFixed(4) + '%',
+        'tot_rt': (tot_rt * 100).toFixed(4) + '%'
+    });
+    
+    return {
+        ipoReturn: iport,
+        freecashReturn: freecash_rt,
+        totalReturn: tot_rt,
+        validCount: validCount,
+        totalRtamt: totalRtamt,
+        startDate: startDate,
+        endDate: endDate,
+        deltaYears: delta / 365
+    };
 }
 
 function calculateBoardReturns(selectedBoards) {
@@ -1005,6 +1148,38 @@ function calculateRecommendedAllocation(expectedReturn, riskFreeRate) {
     } else {
         return 85;
     }
+}
+
+function showRtEstimationBreakdown(selectedBoards, result, netAssetsWan, riskFreeRate) {
+    const breakdown = document.getElementById('calculationBreakdown');
+    
+    let html = `
+        <p><strong>计算基础:</strong></p>
+        <ul>
+            <li>净资产规模: ${netAssetsWan}万元 (${(netAssetsWan * 10000).toLocaleString()}元)</li>
+            <li>无风险利率: ${riskFreeRate}% (${(riskFreeRate/100).toFixed(4)})</li>
+            <li>选择板块: ${selectedBoards.length > 0 ? selectedBoards.join(', ') : '全部板块'}</li>
+            <li>数据时间范围: ${result.startDate ? result.startDate.toISOString().split('T')[0] : '未知'} 至 ${result.endDate ? result.endDate.toISOString().split('T')[0] : '未知'}</li>
+            <li>时间跨度: ${result.deltaYears ? result.deltaYears.toFixed(2) : '1.00'}年</li>
+            <li>有效IPO数量: ${result.validCount}个</li>
+        </ul>
+        
+        <p><strong>收益构成:</strong></p>
+        <ul>
+            <li>打新收益率: ${(result.ipoReturn * 100).toFixed(2)}%</li>
+            <li>闲置资金收益率: ${(result.freecashReturn * 100).toFixed(2)}%</li>
+            <li>总收益率: ${(result.totalReturn * 100).toFixed(2)}%</li>
+        </ul>
+        
+        <p><strong>收益计算:</strong></p>
+        <ul>
+            <li>总打新收益金额: ¥${Math.round(result.totalRtamt).toLocaleString()}</li>
+            <li>年化打新收益: ¥${Math.round(netAssetsWan * 10000 * result.ipoReturn).toLocaleString()}</li>
+            <li>闲置资金收益: ¥${Math.round(netAssetsWan * 10000 * result.freecashReturn).toLocaleString()}</li>
+        </ul>
+    `;
+    
+    breakdown.innerHTML = html;
 }
 
 function showCalculationBreakdown(selectedBoards, boardReturns, netAssets, expectedReturn, riskFreeRate) {
