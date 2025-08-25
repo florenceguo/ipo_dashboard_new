@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新股市场情况看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', '微软雅黑', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .update-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .update-button {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: transform 0.2s ease;
+        }
+
+        .update-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            border: 1px solid #dee2e6;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            color: #e74c3c;
+            background: #fdf2f2;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+            margin: 10px 0;
+        }
+
+        /* 收益测算工具样式 */
+        .calculator-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .input-group input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .input-group input[type="number"]:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .multi-select-container {
+            position: relative;
+        }
+
+        .multi-select-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+
+        .multi-select-header:hover {
+            border-color: #3498db;
+        }
+
+        .multi-select-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #3498db;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .multi-select-options.show {
+            display: block;
+        }
+
+        .option-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .option-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .option-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .calculate-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .calculate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .result-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #dee2e6;
+        }
+
+        .result-card h4 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .result-item {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #27ae60;
+            margin-bottom: 5px;
+        }
+
+        .result-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .calculation-details {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .calculation-details h5 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .calculation-details p, .calculation-details ul {
+            font-size: 0.9rem;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .calculator-container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .result-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 综合统计样式 */
+        .comprehensive-stats {
+            padding: 20px 0;
+        }
+
+        .stat-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item.large {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px;
+            background: linear-gradient(135deg, var(--primary-color), #667eea);
+            color: white;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-item.large .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .stat-item.large .stat-label {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        /* 热力图样式 */
+        #ipoHeatmapChart {
+            height: 300px !important;
+        }
+
+        /* 响应式优化 */
+        @media (max-width: 768px) {
+            .stat-row {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .stat-item.large {
+                min-width: unset;
+            }
+            
+            .comprehensive-stats {
+                padding: 15px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 新股市场情况看板</h1>
+            <p>基于Wind数据的智能新股分析系统</p>
+        </div>
+
+        <div class="update-info">
+            <span id="dataUpdateTime">数据更新时间: 加载中...</span>
+            <button class="update-button" onclick="refreshData()">🔄 刷新数据</button>
+        </div>
+
+        <div id="loading" class="loading">
+            📊 正在加载数据，请稍候...
+        </div>
+
+        <div id="content" style="display: none;">
+            <div class="dashboard">
+                <!-- 新股周度年化收益 -->
+                <div class="card">
+                    <h3 class="card-title">📈 新股周度年化收益</h3>
+                    <div class="chart-container">
+                        <canvas id="weeklyReturnsChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="avgWeeklyReturn">-</div>
+                            <div class="stat-label">平均周收益</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="maxWeeklyReturn">-</div>
+                            <div class="stat-label">最高周收益</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 北交所月度年化收益 -->
+                <div class="card">
+                    <h3 class="card-title">🏛️ 北交所月度年化收益</h3>
+                    <div class="chart-container">
+                        <canvas id="beijingExchangeChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="avgBjReturn">-</div>
+                            <div class="stat-label">平均月收益</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalBjReturn">-</div>
+                            <div class="stat-label">累计收益</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 主板中签率统计 -->
+                <div class="card">
+                    <h3 class="card-title">🎯 主板新股中签率统计</h3>
+                    <div class="chart-container">
+                        <canvas id="mainBoardLotteryChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="mainBoardAvgLotteryA">-</div>
+                            <div class="stat-label">主板A类平均中签率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="mainBoardAvgLotteryB">-</div>
+                            <div class="stat-label">主板B类平均中签率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="mainBoardAvgA2BRatio">-</div>
+                            <div class="stat-label">A/B中签率比均值</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 北交所中签率统计 -->
+                <div class="card">
+                    <h3 class="card-title">🏛️ 北交所新股中签率统计</h3>
+                    <div class="chart-container">
+                        <canvas id="beijingExchangeLotteryChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="beijingAvgLotteryOnline">-</div>
+                            <div class="stat-label">北交所平均网上中签率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="beijingLotteryCount">-</div>
+                            <div class="stat-label">统计IPO数量</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 发行统计 -->
+                <div class="card">
+                    <h3 class="card-title">📊 新股发行统计</h3>
+                    <div class="chart-container">
+                        <canvas id="issuanceChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalStocks">-</div>
+                            <div class="stat-label">总发行数量</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalRaised">-</div>
+                            <div class="stat-label">总募资金额(亿)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 板块涨跌幅趋势 -->
+                <div class="card">
+                    <h3 class="card-title">📈 各板块月度涨跌幅趋势</h3>
+                    <div class="chart-container">
+                        <canvas id="sectorPerformanceChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="bestSector">-</div>
+                            <div class="stat-label">表现最佳板块</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="bestSectorReturn">-</div>
+                            <div class="stat-label">平均涨幅</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 市盈率统计 -->
+                <div class="card">
+                    <h3 class="card-title">💰 市盈率统计</h3>
+                    <div class="chart-container">
+                        <canvas id="peRatioChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="avgIpoPe">-</div>
+                            <div class="stat-label">平均IPO市盈率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="avgIndustryPe">-</div>
+                            <div class="stat-label">平均行业市盈率</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- IPO热力日历 -->
+                <div class="card">
+                    <h3 class="card-title">📅 IPO发行热力日历</h3>
+                    <div class="chart-container">
+                        <canvas id="ipoHeatmapChart"></canvas>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="peakMonth">-</div>
+                            <div class="stat-label">发行高峰月</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="peakCount">-</div>
+                            <div class="stat-label">最高月发行量</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 综合数据统计 -->
+                <div class="card">
+                    <h3 class="card-title">📋 市场综合统计</h3>
+                    <div class="comprehensive-stats">
+                        <div class="stat-row">
+                            <div class="stat-item large">
+                                <div class="stat-value" id="totalIpoCount">-</div>
+                                <div class="stat-label">总IPO数量</div>
+                            </div>
+                            <div class="stat-item large">
+                                <div class="stat-value" id="totalRaisedAmount">-</div>
+                                <div class="stat-label">总募资金额(亿)</div>
+                            </div>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-item">
+                                <div class="stat-value" id="avgFirstDayReturn">-</div>
+                                <div class="stat-label">平均首日涨幅</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="avgLotteryRate">-</div>
+                                <div class="stat-label">平均中签率</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="successRate">-</div>
+                                <div class="stat-label">上涨成功率</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="avgPE">-</div>
+                                <div class="stat-label">平均市盈率</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 打新收益测算工具 -->
+            <div class="card" style="grid-column: 1 / -1; max-width: 800px; margin: 0 auto;">
+                <h3 class="card-title">🧮 打新收益测算工具</h3>
+                
+                <div class="calculator-container">
+                    <div class="input-section">
+                        <div class="input-group">
+                            <label for="netAssets">净资产 (万元):</label>
+                            <input type="number" id="netAssets" value="500" min="0" step="10">
+                        </div>
+                        
+                        <div class="input-group">
+                            <label for="riskFreeRate">无风险利率 (%):</label>
+                            <input type="number" id="riskFreeRate" value="2.5" min="0" max="10" step="0.1">
+                        </div>
+                        
+                        <div class="input-group">
+                            <label>选择板块:</label>
+                            <div class="multi-select-container">
+                                <div class="multi-select-header" onclick="toggleDropdown()">
+                                    <span id="selectedBoards">全部板块</span>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                <div class="multi-select-options" id="boardOptions">
+                                    <label class="option-item">
+                                        <input type="checkbox" value="all" onchange="toggleAll(this)" checked>
+                                        <span>全选</span>
+                                    </label>
+                                    <label class="option-item">
+                                        <input type="checkbox" value="上证主板" onchange="updateSelection()" checked>
+                                        <span>上证主板</span>
+                                    </label>
+                                    <label class="option-item">
+                                        <input type="checkbox" value="深证主板" onchange="updateSelection()" checked>
+                                        <span>深证主板</span>
+                                    </label>
+                                    <label class="option-item">
+                                        <input type="checkbox" value="科创板" onchange="updateSelection()" checked>
+                                        <span>科创板</span>
+                                    </label>
+                                    <label class="option-item">
+                                        <input type="checkbox" value="创业板" onchange="updateSelection()" checked>
+                                        <span>创业板</span>
+                                    </label>
+                                    <label class="option-item">
+                                        <input type="checkbox" value="北交所" onchange="updateSelection()" checked>
+                                        <span>北交所</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button class="calculate-btn" onclick="calculateReturns()">
+                            🚀 计算收益
+                        </button>
+                    </div>
+                    
+                    <div class="result-section">
+                        <div class="result-card">
+                            <h4>📊 收益测算结果</h4>
+                            <div class="result-grid">
+                                <div class="result-item">
+                                    <div class="result-value" id="expectedReturn">-</div>
+                                    <div class="result-label">预期年化收益率</div>
+                                </div>
+                                <div class="result-item">
+                                    <div class="result-value" id="expectedProfit">-</div>
+                                    <div class="result-label">预期年收益金额</div>
+                                </div>
+                                <div class="result-item">
+                                    <div class="result-value" id="riskAdjustedReturn">-</div>
+                                    <div class="result-label">风险调整后收益</div>
+                                </div>
+                                <div class="result-item">
+                                    <div class="result-value" id="recommendedAllocation">-</div>
+                                    <div class="result-label">建议配置比例</div>
+                                </div>
+                            </div>
+                            
+                            <div class="calculation-details">
+                                <h5>📋 计算详情</h5>
+                                <div id="calculationBreakdown">
+                                    <p>请输入参数并点击"计算收益"</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
